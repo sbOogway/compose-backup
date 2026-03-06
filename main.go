@@ -14,6 +14,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/volume"
+	"github.com/docker/docker/client"
 )
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -57,6 +62,9 @@ func run(args []string) error {
 			return fmt.Errorf("restore requires a backup file argument")
 		}
 		return restore(stackDir, stackName, args[2])
+
+	case "volumes":
+		return listVolumes(stackDir, stackName)
 
 	default:
 		return usageError()
@@ -139,6 +147,37 @@ func restore(stackDir, stackName, backupFile string) error {
 	}
 
 	ok("Restore complete. Stack '%s' is running.", stackName)
+	return nil
+}
+
+// ── Volumes ───────────────────────────────────────────────────────────────────
+
+func listVolumes(stackDir, stackName string) error {
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	defer cli.Close()
+
+	f := filters.NewArgs()
+	f.Add("label", fmt.Sprintf("com.docker.compose.project=%s", stackName))
+
+	volumes, err := cli.VolumeList(ctx, volume.ListOptions{Filters: f})
+	if err != nil {
+		return fmt.Errorf("failed to list volumes: %w", err)
+	}
+
+	if len(volumes.Volumes) == 0 {
+		fmt.Printf("No volumes found for stack '%s'\n", stackName)
+		return nil
+	}
+
+	fmt.Printf("Volumes for stack '%s':\n\n", stackName)
+	for _, v := range volumes.Volumes {
+		fmt.Printf("Name: %s\nMountpoint: %s\n\n", v.Name, v.Mountpoint)
+	}
+
 	return nil
 }
 
@@ -374,18 +413,20 @@ func usageError() error {
 	fmt.Fprintf(os.Stderr, `compose-backup — backup & restore any Docker Compose stack
 
 Usage:
-  compose-backup backup  <stack-dir> [output.tar.gz]
+  compose-backup backup   <stack-dir> [output.tar.gz]
   compose-backup restore <stack-dir> <backup.tar.gz>
+  compose-backup volumes <stack-dir>
 
 Examples:
   compose-backup backup  /opt/nextcloud
   compose-backup backup  /opt/nextcloud  /backups/nextcloud_2026.tar.gz
   compose-backup restore /opt/nextcloud  /backups/nextcloud_2026.tar.gz
+  compose-backup volumes /opt/nextcloud
 
 Build for other platforms (from any machine with Go installed):
   GOOS=windows GOARCH=amd64 go build -o compose-backup.exe
   GOOS=darwin  GOARCH=arm64 go build -o compose-backup-mac
   GOOS=linux   GOARCH=amd64 go build -o compose-backup-linux
-`)
+ `)
 	return errors.New("invalid arguments")
 }
