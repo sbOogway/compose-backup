@@ -1,3 +1,7 @@
 dist/
 
+test/
+
 *.tar.gz
+
+compose-backup
