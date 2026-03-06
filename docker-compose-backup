@@ -1,0 +1,90 @@
+#!/bin/bash 
+
+help() {
+  echo "Usage: $(basename $0) <command> <name> <path>"
+  echo ""
+  echo "Commands:"
+  echo "  backup  <name> <compose-path>  Back up a Docker Compose project"
+  echo "  restore <name> <restore-path>  Restore a Docker Compose project"
+  echo ""
+  echo "Arguments:"
+  echo "  name          Name of the backup file (without .tar.gz extension)"
+  echo "  compose-path  Path to the directory containing docker-compose.yml"
+  echo "  restore-path  Path to the directory to restore the backup into"
+  echo ""
+  echo "!!!only supported bind volumes!!!"
+  echo ""
+  echo "Examples:"
+  echo "  $(basename $0) backup  myapp /opt/myapp"
+  echo "  $(basename $0) restore myapp /opt/myapp"
+}
+
+backup() {
+  BACKUP_NAME=$1
+  COMPOSE_PATH=$2
+
+  echo "[backup] Starting backup for $BACKUP_NAME from $COMPOSE_PATH"
+
+  pushd $COMPOSE_PATH > /dev/null || exit
+
+    echo "[backup] Pulling and saving Docker images..."
+    docker compose config --images | xargs docker save -o images.tar
+
+    echo "[backup] Stopping containers..."
+    docker compose down > /dev/null 2>&1
+
+    echo "[backup] Creating archive..."
+    tar -cpzf $BACKUP_NAME.tar.gz .
+
+    echo "[backup] Starting containers..."
+    docker compose up -d > /dev/null 2>&1
+
+    popd > /dev/null
+
+  echo "[backup] Backup completed: $BACKUP_NAME.tar.gz"
+}
+
+restore() {
+    BACKUP_NAME=$1
+    RESTORE_PATH=$2
+
+    echo "[restore] Starting restore for $BACKUP_NAME to $RESTORE_PATH"
+
+    mkdir -p $RESTORE_PATH
+
+    pushd $RESTORE_PATH > /dev/null || exit
+
+        echo "[restore] Extracting archive..."
+        tar -xpzf $BACKUP_NAME.tar.gz 
+
+        echo "[restore] Loading Docker images..."
+        docker load -i images.tar
+
+        echo "[restore] Starting containers..."
+        docker compose up -d > /dev/null 2>&1
+
+    popd > /dev/null
+
+    echo "[restore] Restore completed"
+}
+
+if [ $# -ne 3 ]; then
+  echo "Error: expected 3 arguments, got $#"
+  echo ""
+  help
+  exit 1
+fi
+
+COMMAND=$1
+NAME=$2
+PATH_=$3 > /dev/null
+
+case $COMMAND in
+  backup|restore)
+    $COMMAND $NAME $PATH_
+  ;;
+  *)
+    help
+  ;;
+
+esac
