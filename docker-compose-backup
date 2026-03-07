@@ -33,8 +33,8 @@ backup() {
     echo "[backup] Stopping containers..."
     docker compose down > /dev/null 2>&1
 
-    echo "[backup] Creating archive..."
-    tar -cpzf $BACKUP_NAME.tar.gz .
+    echo "[backup] Creating archive... /tmp/$BACKUP_NAME.tar.gz"
+    tar -cpzf /tmp/$BACKUP_NAME.tar.gz .
 
     echo "[backup] Starting containers..."
     docker compose up -d > /dev/null 2>&1
